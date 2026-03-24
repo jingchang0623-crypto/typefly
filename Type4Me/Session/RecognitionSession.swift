@@ -76,6 +76,9 @@ actor RecognitionSession {
     private var eventConsumptionTask: Task<Void, Never>?
     private var activeFlashTask: Task<String?, Never>?
     private var hasEmittedReadyForCurrentSession = false
+    private var isASRConnected = false
+    private var pendingAudioChunks: [Data] = []
+    private let maxPendingAudioChunks = 40
 
     // MARK: - Speculative LLM (fire during recording pauses)
 
@@ -108,6 +111,8 @@ actor RecognitionSession {
         self.currentMode = mode
         self.recordingStartTime = nil
         hasEmittedReadyForCurrentSession = false
+        isASRConnected = false
+        pendingAudioChunks = []
         state = .starting
 
         // Load credentials for selected provider
@@ -159,38 +164,8 @@ actor RecognitionSession {
             boostingTableID: biasSettings.boostingTableID
         )
 
-        do {
-            try await client.connect(config: config, options: requestOptions)
-            NSLog(
-                "[Session] ASR connected OK (streaming, hotwords=%d, history=%d)",
-                hotwords.count,
-                requestOptions.contextHistoryLength
-            )
-            DebugFileLogger.log("ASR connected OK")
-        } catch {
-            NSLog("[Session] ASR connect FAILED: %@", String(describing: error))
-            DebugFileLogger.log("ASR connect failed: \(String(describing: error))")
-            SoundFeedback.playError()
-            await client.disconnect()
-            self.asrClient = nil
-            state = .idle
-            onASREvent?(.error(error))
-            onASREvent?(.completed)
-            return
-        }
-
         // Reset text state
         currentTranscript = .empty
-
-        // Start ASR event consumption
-        let events = await client.events
-        eventConsumptionTask = Task { [weak self] in
-            for await event in events {
-                guard let self else { break }
-                await self.handleASREvent(event)
-                if case .completed = event { break }
-            }
-        }
 
         // Wire audio level → UI
         let levelHandler = self.onAudioLevel
@@ -198,7 +173,7 @@ actor RecognitionSession {
             levelHandler?(level)
         }
 
-        // Wire audio callback → ASR
+        // Wire audio callback → ASR (buffers while ASR is still connecting)
         var chunkCount = 0
         audioEngine.onAudioChunk = { [weak self] data in
             guard let self else { return }
@@ -216,9 +191,12 @@ actor RecognitionSession {
         }
 
         do {
+            let audioStartT0 = ContinuousClock.now
             try audioEngine.start()
             NSLog("[Session] Audio engine started OK")
-            DebugFileLogger.log("audio engine started OK")
+            DebugFileLogger.log("audio engine started OK +\(ContinuousClock.now - audioStartT0)")
+            state = .recording
+            DebugFileLogger.log("session entered recording state, awaiting ASR connect")
         } catch {
             NSLog("[Session] Audio engine start FAILED: %@", String(describing: error))
             DebugFileLogger.log("audio engine start failed: \(String(describing: error))")
@@ -230,8 +208,56 @@ actor RecognitionSession {
             return
         }
 
-        state = .recording
-        DebugFileLogger.log("session entered recording state, waiting for first audio chunk")
+        do {
+            let connectT0 = ContinuousClock.now
+            try await client.connect(config: config, options: requestOptions)
+            NSLog(
+                "[Session] ASR connected OK (streaming, hotwords=%d, history=%d)",
+                hotwords.count,
+                requestOptions.contextHistoryLength
+            )
+            DebugFileLogger.log("ASR connected OK +\(ContinuousClock.now - connectT0)")
+            isASRConnected = true
+        } catch {
+            NSLog("[Session] ASR connect FAILED: %@", String(describing: error))
+            DebugFileLogger.log("ASR connect failed: \(String(describing: error))")
+            SoundFeedback.playError()
+            audioEngine.onAudioChunk = nil
+            audioEngine.stop()
+            audioEngine.onAudioLevel = nil
+            await client.disconnect()
+            self.asrClient = nil
+            state = .idle
+            onASREvent?(.error(error))
+            onASREvent?(.completed)
+            return
+        }
+
+        // Recording may have already been stopped while connect() was in flight.
+        guard state == .recording else {
+            await client.disconnect()
+            self.asrClient = nil
+            isASRConnected = false
+            pendingAudioChunks.removeAll(keepingCapacity: true)
+            return
+        }
+
+        // Start ASR event consumption
+        let events = await client.events
+        eventConsumptionTask = Task { [weak self] in
+            for await event in events {
+                guard let self else { break }
+                await self.handleASREvent(event)
+                if case .completed = event { break }
+            }
+        }
+
+        do {
+            try await flushPendingAudioToASR()
+        } catch {
+            NSLog("[Session] Failed to flush buffered audio: %@", String(describing: error))
+            DebugFileLogger.log("flush buffered audio failed: \(String(describing: error))")
+        }
 
         // Pre-warm LLM connection for modes with post-processing
         if !currentMode.prompt.isEmpty, let llmConfig = KeychainService.loadLLMConfig() {
@@ -364,6 +390,8 @@ actor RecognitionSession {
         }
         eventConsumptionTask = nil
         asrClient = nil
+        isASRConnected = false
+        pendingAudioChunks.removeAll(keepingCapacity: true)
         hasEmittedReadyForCurrentSession = false
 
         // Combine confirmed segments + any trailing unconfirmed partial.
@@ -503,8 +531,53 @@ actor RecognitionSession {
 
     private func sendAudioToASR(_ data: Data) async throws {
         guard let client = asrClient else { return }
+        if !isASRConnected {
+            bufferAudioChunk(data)
+            return
+        }
         try await client.sendAudio(data)
     }
+
+    private func bufferAudioChunk(_ data: Data) {
+        pendingAudioChunks.append(data)
+        if pendingAudioChunks.count > maxPendingAudioChunks {
+            pendingAudioChunks.removeFirst(pendingAudioChunks.count - maxPendingAudioChunks)
+        }
+    }
+
+    private func flushPendingAudioToASR() async throws {
+        guard isASRConnected, let client = asrClient else { return }
+        guard !pendingAudioChunks.isEmpty else { return }
+        let bufferedCount = pendingAudioChunks.count
+        for chunk in pendingAudioChunks {
+            try await client.sendAudio(chunk)
+        }
+        pendingAudioChunks.removeAll(keepingCapacity: true)
+        DebugFileLogger.log("flushed buffered audio chunks=\(bufferedCount)")
+    }
+
+#if DEBUG
+    func _debugSetASRClient(_ client: any SpeechRecognizer, connected: Bool) {
+        asrClient = client
+        isASRConnected = connected
+    }
+
+    func _debugSetASRConnected(_ connected: Bool) {
+        isASRConnected = connected
+    }
+
+    func _debugSendAudioToASR(_ data: Data) async throws {
+        try await sendAudioToASR(data)
+    }
+
+    func _debugFlushPendingAudioToASR() async throws {
+        try await flushPendingAudioToASR()
+    }
+
+    func _debugPendingAudioChunkCount() -> Int {
+        pendingAudioChunks.count
+    }
+#endif
 
     private func markReadyIfNeeded() {
         guard !hasEmittedReadyForCurrentSession else { return }
@@ -594,6 +667,8 @@ actor RecognitionSession {
             await client.disconnect()
         }
         asrClient = nil
+        isASRConnected = false
+        pendingAudioChunks.removeAll(keepingCapacity: true)
 
         state = .idle
         currentTranscript = .empty
