@@ -213,6 +213,15 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             } else {
                 dynamicCredentialFields
             }
+            if selectedASRProvider == .volcano {
+                Text(L(
+                    "提示：App ID 需要在「旧版豆包语音」控制台的应用配置页面获取（不是 API Key）。",
+                    "Tip: App ID is from the legacy Doubao Speech console app settings page (not an API key)."
+                ))
+                .font(.system(size: 10))
+                .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.top, 8)
+            }
 
             HStack(spacing: 8) {
                 Spacer()
@@ -623,6 +632,135 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MARK: - Hotkey Settings Card
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+struct HotkeySettingsCard: View, SettingsCardHelpers {
+
+    @Environment(AppState.self) private var appState
+    @State private var modes: [ProcessingMode] = []
+    @State private var hasDirtyChanges = false
+    @State private var saveStatus: SettingsTestStatus = .idle
+
+    var body: some View {
+        settingsGroupCard(L("快捷键设置", "Hotkey Settings")) {
+            Text(L("每个模式可单独配置快捷键与触发方式", "Configure per-mode shortcuts and trigger style"))
+                .font(.system(size: 10))
+                .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.bottom, 6)
+
+            if modes.isEmpty {
+                Text(L("暂无模式", "No modes"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(TF.settingsTextTertiary)
+                    .frame(minHeight: 72, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(modes.indices), id: \.self) { index in
+                        hotkeyModeRow($modes[index])
+                        if index < modes.count - 1 {
+                            SettingsDivider()
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                statusBadge(saveStatus)
+                secondaryButton(L("高级设置", "Advanced")) {
+                    NotificationCenter.default.post(name: .navigateToMode, object: nil)
+                }
+                saveButton { saveModes() }
+                    .disabled(!hasDirtyChanges)
+            }
+            .padding(.top, 10)
+        }
+        .task {
+            modes = ModeStorage().load()
+            hasDirtyChanges = false
+        }
+        .onChange(of: modes) { _, _ in
+            hasDirtyChanges = true
+            saveStatus = .idle
+        }
+    }
+
+    private func hotkeyModeRow(_ mode: Binding<ProcessingMode>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(mode.wrappedValue.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(TF.settingsText)
+                if mode.wrappedValue.isBuiltin {
+                    Text(L("内置", "Built-in"))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(TF.settingsCardAlt)
+                        )
+                }
+                Spacer()
+                HotkeyRecorderView(
+                    keyCode: mode.hotkeyCode,
+                    modifiers: mode.hotkeyModifiers
+                )
+            }
+
+            Picker("", selection: mode.hotkeyStyle) {
+                Text(L("按住录制", "Hold to record")).tag(ProcessingMode.HotkeyStyle.hold)
+                Text(L("按下切换", "Toggle")).tag(ProcessingMode.HotkeyStyle.toggle)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 220)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func saveModes() {
+        let duplicates = duplicateHotkeyNames(in: modes)
+        if !duplicates.isEmpty {
+            saveStatus = .failed(L("快捷键冲突", "Hotkey conflict"))
+            return
+        }
+        do {
+            try ModeStorage().save(modes)
+            appState.availableModes = modes
+            if let updated = modes.first(where: { $0.id == appState.currentMode.id }) {
+                appState.currentMode = updated
+            } else if let fallback = modes.first {
+                appState.currentMode = fallback
+            }
+            NotificationCenter.default.post(name: .modesDidChange, object: nil)
+            hasDirtyChanges = false
+            saveStatus = .success
+        } catch {
+            saveStatus = .failed(L("保存失败", "Save failed"))
+        }
+    }
+
+    private func duplicateHotkeyNames(in modes: [ProcessingMode]) -> [String] {
+        var seen: Set<String> = []
+        var duplicates: [String] = []
+        for mode in modes {
+            guard let code = mode.hotkeyCode else { continue }
+            let mods = mode.hotkeyModifiers ?? 0
+            let key = "\(code)-\(mods)"
+            if seen.contains(key) {
+                duplicates.append(mode.name)
+            } else {
+                seen.insert(key)
+            }
+        }
+        return duplicates
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MARK: - General Settings Tab
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -647,7 +785,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             SettingsSectionHeader(
                 label: "GENERAL",
                 title: L("通用设置", "General Settings"),
-                description: L("接口配置与偏好设置。快捷键请在「处理模式」中配置。", "API configuration and preferences. Hotkeys are configured in Modes.")
+                description: L("快捷键、接口配置与偏好设置。", "Hotkeys, API configuration and preferences.")
             )
 
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -711,7 +849,45 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             moduleSpacer()
 
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // MODULE 2: API 设置
+            // MODULE 2: 快捷键设置
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            moduleHeader(L("快捷键设置", "Hotkey Settings"))
+
+            twoColumnLayout {
+                HotkeySettingsCard()
+            } right: {
+                settingsGroupCard(L("快捷键说明", "Hotkey Guide")) {
+                    Text(L(
+                        "你可以在此页面直接为每个模式录制快捷键，并切换「按住录制 / 按下切换」触发方式。",
+                        "Record shortcuts per mode here, and switch trigger style between hold-to-record and toggle."
+                    ))
+                    .font(.system(size: 12))
+                    .foregroundStyle(TF.settingsTextSecondary)
+                    .lineSpacing(2)
+                    .padding(.bottom, 10)
+
+                    Text(L(
+                        "若遇到复杂冲突、模式排序或 Prompt 调整，可进入「处理模式」页继续配置。",
+                        "For conflict resolution, mode ordering, or prompt editing, use the Modes page."
+                    ))
+                    .font(.system(size: 11))
+                    .foregroundStyle(TF.settingsTextTertiary)
+                    .lineSpacing(2)
+
+                    HStack {
+                        Spacer()
+                        secondaryButton(L("打开处理模式", "Open Modes")) {
+                            NotificationCenter.default.post(name: .navigateToMode, object: nil)
+                        }
+                    }
+                    .padding(.top, 12)
+                }
+            }
+
+            moduleSpacer()
+
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // MODULE 3: API 设置
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             moduleHeader(L("API 设置", "API Settings"))
 
