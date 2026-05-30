@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投影梯形预矫正工具 · Keystone Pre-Warp</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e6e9ef; --muted:#9aa3b2; --accent:#4f8cff; --accent2:#2ec28b; --danger:#ff5c5c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px}
+  .layout{display:flex;min-height:calc(100vh - 56px)}
+  .side{width:340px;flex:0 0 340px;border-right:1px solid var(--line);padding:16px;overflow-y:auto;background:var(--panel)}
+  .main{flex:1;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+  .group{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .group h3{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  label.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0}
+  label.row span.lbl{color:var(--txt);flex:1;min-width:0}
+  label.row .hint{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+  input[type="number"],select,input[type="text"]{background:#0d0f13;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:6px 8px;font-size:13px;width:90px}
+  select{width:130px}
+  input[type="range"]{width:140px}
+  input[type="color"]{width:38px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;background:#0d0f13}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;font-weight:600}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.sec{background:#2a3140}
+  .btn.green{background:var(--accent2)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:22px 12px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+  .drop.drag{border-color:var(--accent);color:var(--accent);background:rgba(79,140,255,.08)}
+  .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .thumb{position:relative;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;background:#000;aspect-ratio:1}
+  .thumb.sel{border-color:var(--accent)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .x{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1}
+  .thumb .nm{position:absolute;bottom:0;left:0;right:0;font-size:9px;background:rgba(0,0,0,.55);color:#fff;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .canvasWrap{flex:1;background:#0a0c10;border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;min-height:340px}
+  .canvasWrap canvas{max-width:100%;max-height:100%;image-rendering:auto}
+  .bgChecker{background-image:linear-gradient(45deg,#1a1d24 25%,transparent 25%),linear-gradient(-45deg,#1a1d24 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1d24 75%),linear-gradient(-45deg,transparent 75%,#1a1d24 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+  .meta{color:var(--muted);font-size:12px;display:flex;gap:18px;flex-wrap:wrap}
+  .meta b{color:var(--txt)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .badge{display:inline-block;background:#2a3140;color:var(--muted);border-radius:20px;padding:2px 10px;font-size:11px}
+  a.dl{display:none}
+  .pill{font-size:11px;color:var(--accent2)}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--muted);font-size:12px;user-select:none}
+  .note{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>投影梯形预矫正工具</h1>
+  <span class="sub">Keystone Pre-Warp · 批量把图片处理成带透视角的梯形图，用于无 T 型矫正的斜角投影</span>
+  <span class="badge" id="status">就绪</span>
+</header>
+
+<div class="layout">
+  <!-- ================= 左侧控制面板 ================= -->
+  <aside class="side">
+    <div class="group">
+      <h3>1 · 上传图片（可批量）</h3>
+      <div class="drop" id="drop">点击选择 或 拖拽图片到此<br><small>支持 PNG / JPG / WEBP，可多选</small></div>
+      <input type="file" id="file" accept="image/*" multiple style="display:none">
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+
+    <div class="group">
+      <h3>2 · 透视参数</h3>
+      <label class="row">
+        <span class="lbl">透视方向
+          <span class="hint">收窄的那条边（投影的远边）</span>
+        </span>
+        <select id="dir">
+          <option value="top" selected>上窄（远边在上）</option>
+          <option value="bottom">下窄</option>
+          <option value="left">左窄</option>
+          <option value="right">右窄</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span class="lbl">投影倾角 θ (°)
+          <span class="hint">光轴与纸面法线夹角</span>
+        </span>
+        <input type="number" id="theta" value="35" min="0" max="80" step="1">
+      </label>
+
+      <label class="row">
+        <span class="lbl">收缩比例 r (%)
+          <span class="hint">窄边 / 宽边，可手动微调</span>
+        </span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="ratioRange" min="20" max="100" step="1" value="68">
+          <input type="number" id="ratio" value="68" min="10" max="100" step="0.5" style="width:64px">
+        </span>
+      </label>
+
+      <details>
+        <summary>高级 · 由倾角自动计算收缩比</summary>
+        <label class="row">
+          <span class="lbl">垂直半视场角 φ (°)</span>
+          <input type="number" id="phi" value="15" min="1" max="40" step="0.5">
+        </label>
+        <button class="btn sec" id="calcRatio" style="width:100%">由 θ、φ 计算 r</button>
+        <div class="note">公式 r = sin(90−θ−φ) / sin(90−θ+φ)。你这套设备 θ=35°、D=19cm、目标 22.98×12.92cm 反推 φ≈15°，得 r≈68%。装好后用「校准网格」实拍微调即可。</div>
+      </details>
+    </div>
+
+    <div class="group">
+      <h3>3 · 输出设置</h3>
+      <label class="row">
+        <span class="lbl">输出宽高比</span>
+        <select id="aspect">
+          <option value="16:9" selected>16:9</option>
+          <option value="4:3">4:3</option>
+          <option value="3:2">3:2</option>
+          <option value="1:1">1:1</option>
+          <option value="custom">自定义</option>
+        </select>
+      </label>
+      <label class="row" id="customAspectRow" style="display:none">
+        <span class="lbl">自定义 宽:高</span>
+        <span><input type="number" id="arW" value="16" min="1" step="0.1" style="width:54px"> :
+        <input type="number" id="arH" value="9" min="1" step="0.1" style="width:54px"></span>
+      </label>
+      <label class="row">
+        <span class="lbl">分辨率（长边 px）</span>
+        <input type="number" id="res" value="1920" min="64" max="8192" step="1">
+      </label>
+      <label class="row">
+        <span class="lbl">内容边距 (%)</span>
+        <input type="number" id="pad" value="0" min="0" max="40" step="1">
+      </label>
+      <label class="row">
+        <span class="lbl">背景</span>
+        <select id="bg">
+          <option value="transparent" selected>透明</option>
+          <option value="black">黑色</option>
+          <option value="white">白色</option>
+          <option value="custom">自定义颜色</option>
+        </select>
+      </label>
+      <label class="row" id="bgColorRow" style="display:none">
+        <span class="lbl">背景颜色</span>
+        <input type="color" id="bgColor" value="#000000">
+      </label>
+      <details>
+        <summary>高级 · 网格细分（清晰度/速度）</summary>
+        <label class="row">
+          <span class="lbl">细分数</span>
+          <input type="number" id="subdiv" value="48" min="8" max="160" step="1">
+        </label>
+      </details>
+    </div>
+  </aside>
+
+  <!-- ================= 右侧预览/导出 ================= -->
+  <main class="main">
+    <div class="toolbar">
+      <label class="row" style="margin:0"><input type="checkbox" id="showGrid"> <span class="lbl" style="flex:0">显示参考网格</span></label>
+      <span style="flex:1"></span>
+      <button class="btn green" id="calibBtn">生成校准网格图</button>
+      <button class="btn sec" id="exportOne">导出当前 PNG</button>
+      <button class="btn" id="exportZip">批量导出 ZIP</button>
+      <button class="btn ghost" id="exportEach">逐个下载</button>
+    </div>
+    <div class="canvasWrap bgChecker" id="canvasWrap">
+      <canvas id="preview" width="800" height="450"></canvas>
+    </div>
+    <div class="meta">
+      <span>当前：<b id="mName">—</b></span>
+      <span>输出尺寸：<b id="mSize">—</b></span>
+      <span>梯形：<b id="mTrap">—</b></span>
+      <span class="pill" id="mInfo"></span>
+    </div>
+    <div class="note">
+      原理：斜角投影会把矩形投成梯形（远边被放大）。本工具把你的图反向预畸变成「窄边在远端」的梯形，投到纸面后即还原成正矩形。先用「生成校准网格图」投到桌面，对照绿色目标区微调「收缩比例 / 透视方向」，调准后再批量导出正式图。
+    </div>
+  </main>
+</div>
+
+<a class="dl" id="dl"></a>
+<script>
+/* ===================== 状态 ===================== */
+const state = { images: [], sel: -1 };
+const $ = id => document.getElementById(id);
+const status = t => $('status').textContent = t;
+
+/* ===================== 上传 ===================== */
+const drop = $('drop'), fileInput = $('file');
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => addFiles(e.target.files));
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+function addFiles(fileList){
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  let pending = files.length;
+  if(!pending) return;
+  files.forEach(f => {
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      state.images.push({ name: f.name.replace(/\.[^.]+$/, ''), img, url });
+      if(state.sel < 0) state.sel = state.images.length - 1;
+      if(--pending === 0){ renderThumbs(); render(); }
+    };
+    img.onerror = () => { if(--pending === 0){ renderThumbs(); render(); } };
+    img.src = url;
+  });
+}
+
+function renderThumbs(){
+  const c = $('thumbs'); c.innerHTML = '';
+  state.images.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb' + (i === state.sel ? ' sel' : '');
+    d.innerHTML = `<img src="${it.url}"><div class="nm">${it.name}</div><button class="x" title="移除">×</button>`;
+    d.addEventListener('click', e => { if(e.target.classList.contains('x')) return; state.sel = i; renderThumbs(); render(); });
+    d.querySelector('.x').addEventListener('click', () => {
+      state.images.splice(i,1);
+      if(state.sel >= state.images.length) state.sel = state.images.length - 1;
+      renderThumbs(); render();
+    });
+    c.appendChild(d);
+  });
+}
+
+/* ===================== 参数读取 ===================== */
+function getParams(){
+  const aspectSel = $('aspect').value;
+  let arW = 16, arH = 9;
+  if(aspectSel === 'custom'){ arW = +$('arW').value || 16; arH = +$('arH').value || 9; }
+  else { [arW, arH] = aspectSel.split(':').map(Number); }
+  return {
+    dir: $('dir').value,
+    ratio: Math.min(1, Math.max(0.1, (+$('ratio').value)/100)),
+    aspectW: arW, aspectH: arH,
+    res: Math.max(16, +$('res').value || 1920),
+    pad: Math.min(0.4, Math.max(0, (+$('pad').value||0)/100)),
+    bg: $('bg').value, bgColor: $('bgColor').value,
+    subdiv: Math.max(8, Math.min(160, +$('subdiv').value || 48)),
+    showGrid: $('showGrid').checked
+  };
+}
+
+function outputSize(p){
+  let W, H;
+  if(p.aspectW >= p.aspectH){ W = p.res; H = Math.round(p.res * p.aspectH / p.aspectW); }
+  else { H = p.res; W = Math.round(p.res * p.aspectW / p.aspectH); }
+  return { W, H };
+}
+
+/* ===================== 单应矩阵：单位方块 -> 任意四边形 (Heckbert) =====================
+   角点顺序固定：c0=(0,0) 左上, c1=(1,0) 右上, c2=(1,1) 右下, c3=(0,1) 左下 */
+function squareToQuad(x0,y0,x1,y1,x2,y2,x3,y3){
+  const dx1=x1-x2, dx2=x3-x2, dx3=x0-x1+x2-x3;
+  const dy1=y1-y2, dy2=y3-y2, dy3=y0-y1+y2-y3;
+  let a,b,c,d,e,f,g,h;
+  if(Math.abs(dx3)<1e-9 && Math.abs(dy3)<1e-9){
+    a=x1-x0; b=x2-x1; c=x0; d=y1-y0; e=y2-y1; f=y0; g=0; h=0;
+  } else {
+    const den = dx1*dy2 - dy1*dx2;
+    g = (dx3*dy2 - dy3*dx2)/den;
+    h = (dx1*dy3 - dy1*dx3)/den;
+    a = x1-x0+g*x1; b = x3-x0+h*x3; c = x0;
+    d = y1-y0+g*y1; e = y3-y0+h*y3; f = y0;
+  }
+  return {a,b,c,d,e,f,g,h};
+}
+function applyH(M,u,v){
+  const w = M.g*u + M.h*v + 1;
+  return [ (M.a*u + M.b*v + M.c)/w, (M.d*u + M.e*v + M.f)/w ];
+}
+
+/* 由方向/比例算梯形四角(像素)，返回顺序与单位方块对应 tl,tr,br,bl */
+function buildTrapezoid(W,H,p){
+  const r = p.ratio, pad = p.pad;
+  const left = W*pad, right = W*(1-pad), top = H*pad, bot = H*(1-pad);
+  const xc = (left+right)/2, yc = (top+bot)/2;
+  const halfW = (right-left)/2, halfH = (bot-top)/2;
+  const nW = halfW*r, nH = halfH*r;
+  if(p.dir==='top')    return [[xc-nW,top],[xc+nW,top],[xc+halfW,bot],[xc-halfW,bot]];
+  if(p.dir==='bottom') return [[xc-halfW,top],[xc+halfW,top],[xc+nW,bot],[xc-nW,bot]];
+  if(p.dir==='left')   return [[left,yc-nH],[right,yc-halfH],[right,yc+halfH],[left,yc+nH]];
+  /* right */          return [[left,yc-halfH],[right,yc-nH],[right,yc+nH],[left,yc+halfH]];
+}
+
+/* ===================== 仿射贴图三角形（2D 画布网格变形） ===================== */
+function det3(m){
+  return m[0]*(m[4]*m[8]-m[5]*m[7]) - m[1]*(m[3]*m[8]-m[5]*m[6]) + m[2]*(m[3]*m[7]-m[4]*m[6]);
+}
+function solveAffine(s0,s1,s2,d0,d1,d2){
+  // 求 (ax,bx,cx),(ay,by,cy)，使 d = a*sx+b*sy+c
+  const S = [s0[0],s0[1],1, s1[0],s1[1],1, s2[0],s2[1],1];
+  const detS = det3(S);
+  if(Math.abs(detS) < 1e-9) return null;
+  const col = (vals,idx) => { const m=S.slice(); m[idx]=vals[0]; m[idx+3]=vals[1]; m[idx+6]=vals[2]; return det3(m); };
+  const dx=[d0[0],d1[0],d2[0]], dy=[d0[1],d1[1],d2[1]];
+  return {
+    ax: col(dx,0)/detS, bx: col(dx,1)/detS, cx: col(dx,2)/detS,
+    ay: col(dy,0)/detS, by: col(dy,1)/detS, cy: col(dy,2)/detS
+  };
+}
+function expand(d0,d1,d2,amt){
+  const cx=(d0[0]+d1[0]+d2[0])/3, cy=(d0[1]+d1[1]+d2[1])/3;
+  const e=p=>{ const dx=p[0]-cx, dy=p[1]-cy, l=Math.hypot(dx,dy)||1; return [p[0]+dx/l*amt, p[1]+dy/l*amt]; };
+  return [e(d0),e(d1),e(d2)];
+}
+function drawTri(ctx,img,s0,s1,s2,d0,d1,d2){
+  const T = solveAffine(s0,s1,s2,d0,d1,d2);
+  if(!T) return;
+  const [E0,E1,E2] = expand(d0,d1,d2,0.7);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(E0[0],E0[1]); ctx.lineTo(E1[0],E1[1]); ctx.lineTo(E2[0],E2[1]); ctx.closePath();
+  ctx.clip();
+  ctx.setTransform(T.ax, T.ay, T.bx, T.by, T.cx, T.cy);
+  ctx.drawImage(img,0,0);
+  ctx.restore();
+}
+
+/* ===================== 核心渲染：把 img 变形写入 ctx ===================== */
+function warpInto(ctx, img, W, H, p){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,W,H);
+  if(p.bg !== 'transparent'){
+    ctx.fillStyle = p.bg==='black' ? '#000' : p.bg==='white' ? '#fff' : p.bgColor;
+    ctx.fillRect(0,0,W,H);
+  }
+  const quad = buildTrapezoid(W,H,p);
+  const M = squareToQuad(quad[0][0],quad[0][1],quad[1][0],quad[1][1],quad[2][0],quad[2][1],quad[3][0],quad[3][1]);
+  const N = p.subdiv, iw = img.naturalWidth||img.width, ih = img.naturalHeight||img.height;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  // 预算目标网格点
+  const D = [];
+  for(let j=0;j<=N;j++){ const row=[]; for(let i=0;i<=N;i++){ row.push(applyH(M, i/N, j/N)); } D.push(row); }
+  for(let j=0;j<N;j++){
+    for(let i=0;i<N;i++){
+      const u0=i/N*iw, u1=(i+1)/N*iw, v0=j/N*ih, v1=(j+1)/N*ih;
+      const s00=[u0,v0], s10=[u1,v0], s11=[u1,v1], s01=[u0,v1];
+      const d00=D[j][i], d10=D[j][i+1], d11=D[j+1][i+1], d01=D[j+1][i];
+      drawTri(ctx,img,s00,s10,s11,d00,d10,d11);
+      drawTri(ctx,img,s00,s11,s01,d00,d11,d01);
+    }
+  }
+  ctx.setTransform(1,0,0,1,0,0);
+  if(p.showGrid) drawRefGrid(ctx,M,N);
+  return {quad,M};
+}
+
+function drawRefGrid(ctx,M,N){
+  ctx.save();
+  ctx.strokeStyle='rgba(79,140,255,.45)'; ctx.lineWidth=1;
+  const step = Math.max(1, Math.round(N/8));
+  for(let j=0;j<=N;j+=step){ ctx.beginPath(); for(let i=0;i<=N;i++){ const q=applyH(M,i/N,j/N); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); } ctx.stroke(); }
+  for(let i=0;i<=N;i+=step){ ctx.beginPath(); for(let j=0;j<=N;j++){ const q=applyH(M,i/N,j/N); j?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); } ctx.stroke(); }
+  ctx.restore();
+}
+
+/* 生成校准网格源图（棋盘+网格+对角线+边框） */
+function makeCalibImage(p){
+  const {W,H} = outputSize(p);
+  const c = document.createElement('canvas'); c.width=W; c.height=H;
+  const x = c.getContext('2d');
+  x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+  const cols=16, rows=Math.max(4,Math.round(16*H/W));
+  for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){ if((i+j)%2===0){ x.fillStyle='#d7e3ff'; x.fillRect(i*W/cols,j*H/rows,W/cols,H/rows);} }
+  x.strokeStyle='#1f6fff'; x.lineWidth=Math.max(1,W/600);
+  for(let i=0;i<=cols;i++){ x.beginPath(); x.moveTo(i*W/cols,0); x.lineTo(i*W/cols,H); x.stroke(); }
+  for(let j=0;j<=rows;j++){ x.beginPath(); x.moveTo(0,j*H/rows); x.lineTo(W,j*H/rows); x.stroke(); }
+  x.strokeStyle='#ff3b30'; x.lineWidth=Math.max(2,W/180);
+  x.strokeRect(0,0,W,H);
+  x.beginPath(); x.moveTo(0,0); x.lineTo(W,H); x.moveTo(W,0); x.lineTo(0,H); x.stroke();
+  x.fillStyle='#ff3b30'; x.font=`bold ${Math.round(W/22)}px sans-serif`; x.textAlign='center';
+  x.fillText('校准网格 22.98×12.92', W/2, H*0.5);
+  const img = new Image(); img.src = c.toDataURL(); return new Promise(res=>{ img.onload=()=>res(img); });
+}
+
+/* ===================== 预览 ===================== */
+function render(){
+  const p = getParams();
+  const {W,H} = outputSize(p);
+  $('mSize').textContent = `${W} × ${H}`;
+  const q = buildTrapezoid(W,H,p);
+  $('mTrap').textContent = `窄边${Math.round(p.ratio*100)}% / 宽边100%`;
+  $('mInfo').textContent = `透视方向 ${({top:'上窄',bottom:'下窄',left:'左窄',right:'右窄'})[p.dir]}`;
+  const canvas = $('preview');
+  if(state.sel < 0 || !state.images[state.sel]){
+    $('mName').textContent='— 请先上传图片 —';
+    const ctx=canvas.getContext('2d');
+    canvas.width=Math.min(900,W); canvas.height=Math.round(canvas.width*H/W);
+    ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+  const it = state.images[state.sel];
+  $('mName').textContent = it.name;
+  // 预览缩放（长边限制）
+  const maxEdge = 900;
+  const scale = Math.min(1, maxEdge / Math.max(W,H));
+  const pw = Math.round(W*scale), ph = Math.round(H*scale);
+  canvas.width = pw; canvas.height = ph;
+  const pv = Object.assign({}, p, { subdiv: Math.min(p.subdiv, 40) });
+  // 用缩放后的尺寸渲染
+  const ctx = canvas.getContext('2d');
+  warpInto(ctx, it.img, pw, ph, scaleParams(pv, scale));
+}
+// 预览时梯形也要按比例缩放：buildTrapezoid 用的是传入的 W/H，所以直接传 pw/ph 即可，参数不变
+function scaleParams(p){ return p; }
+
+/* ===================== 导出 ===================== */
+function renderFull(img, p){
+  const {W,H} = outputSize(p);
+  const c = document.createElement('canvas'); c.width=W; c.height=H;
+  const ctx = c.getContext('2d');
+  warpInto(ctx, img, W, H, Object.assign({}, p, {showGrid:false}));
+  return c;
+}
+function canvasToBlob(c){ return new Promise(res => c.toBlob(res, 'image/png')); }
+function triggerDownload(blob, name){
+  const a = $('dl'); a.href = URL.createObjectURL(blob); a.download = name;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+$('exportOne').addEventListener('click', async () => {
+  if(state.sel<0) return alert('请先上传并选择一张图片');
+  status('导出中…');
+  const p = getParams(), it = state.images[state.sel];
+  const blob = await canvasToBlob(renderFull(it.img, p));
+  triggerDownload(blob, it.name + '_keystone.png');
+  status('已导出');
+});
+
+$('exportEach').addEventListener('click', async () => {
+  if(!state.images.length) return alert('请先上传图片');
+  const p = getParams();
+  for(let i=0;i<state.images.length;i++){
+    status(`逐个下载 ${i+1}/${state.images.length}`);
+    const it = state.images[i];
+    const blob = await canvasToBlob(renderFull(it.img, p));
+    triggerDownload(blob, it.name + '_keystone.png');
+    await new Promise(r=>setTimeout(r,350));
+  }
+  status('全部下载完成');
+});
+
+function loadJSZip(){
+  if(window.JSZip) return Promise.resolve(window.JSZip);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload=()=>res(window.JSZip); s.onerror=()=>rej(new Error('JSZip 加载失败'));
+    document.head.appendChild(s);
+  });
+}
+$('exportZip').addEventListener('click', async () => {
+  if(!state.images.length) return alert('请先上传图片');
+  const p = getParams();
+  status('打包中…');
+  let JSZip;
+  try { JSZip = await loadJSZip(); }
+  catch(e){ status('ZIP 不可用，改为逐个下载'); return $('exportEach').click(); }
+  const zip = new JSZip();
+  for(let i=0;i<state.images.length;i++){
+    status(`处理 ${i+1}/${state.images.length}`);
+    const it = state.images[i];
+    const blob = await canvasToBlob(renderFull(it.img, p));
+    zip.file(it.name + '_keystone.png', blob);
+  }
+  status('生成 ZIP…');
+  const out = await zip.generateAsync({type:'blob'});
+  triggerDownload(out, 'keystone_export.zip');
+  status('ZIP 已导出');
+});
+
+$('calibBtn').addEventListener('click', async () => {
+  const p = getParams();
+  const img = await makeCalibImage(p);
+  const blob = await canvasToBlob(renderFull(img, p));
+  triggerDownload(blob, 'calibration_grid_keystone.png');
+  // 同时加入列表方便预览
+  const url = URL.createObjectURL(blob);
+  const im = new Image(); im.onload=()=>{ state.images.push({name:'校准网格',img,url}); state.sel=state.images.length-1; renderThumbs(); render(); };
+  im.src = url;
+  status('校准图已生成并导出');
+});
+
+/* ===================== 联动 ===================== */
+function syncRatio(from){
+  if(from==='range') $('ratio').value = $('ratioRange').value;
+  else $('ratioRange').value = Math.round(+$('ratio').value);
+}
+$('ratioRange').addEventListener('input', ()=>{ syncRatio('range'); render(); });
+$('ratio').addEventListener('input', ()=>{ syncRatio('num'); render(); });
+$('calcRatio').addEventListener('click', ()=>{
+  const theta=+$('theta').value, phi=+$('phi').value;
+  const beta=(90-theta)*Math.PI/180, ph=phi*Math.PI/180;
+  let r = Math.sin(beta-ph)/Math.sin(beta+ph);
+  r = Math.min(1, Math.max(0.1, r));
+  $('ratio').value=(r*100).toFixed(1); $('ratioRange').value=Math.round(r*100);
+  render();
+});
+$('aspect').addEventListener('change', ()=>{ $('customAspectRow').style.display = $('aspect').value==='custom'?'flex':'none'; render(); });
+$('bg').addEventListener('change', ()=>{ $('bgColorRow').style.display = $('bg').value==='custom'?'flex':'none'; render(); });
+['dir','theta','arW','arH','res','pad','bgColor','subdiv','showGrid'].forEach(id=>{
+  $(id).addEventListener('input', render); $(id).addEventListener('change', render);
+});
+
+render();
+</script>
+</body>
+</html>
