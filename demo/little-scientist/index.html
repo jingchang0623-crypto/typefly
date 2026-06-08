@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>小小科技员 · 探索任务</title>
+<style>
+  :root {
+    --w: 480px;
+    --h: 640px;
+    --bg: #0b1437;
+    --bg2: #12204f;
+    --accent: #ffcf4a;
+    --accent2: #4ad9ff;
+    --green: #46e08a;
+    --gray: #5a6486;
+    --card: rgba(255, 255, 255, 0.08);
+    --card-b: rgba(255, 255, 255, 0.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: #05081c;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* 设备外框，固定 480x640 */
+  #device {
+    width: var(--w); height: var(--h);
+    position: relative; overflow: hidden;
+    border-radius: 28px;
+    background: radial-gradient(120% 80% at 50% 0%, #1c2f6e 0%, var(--bg) 45%, #060b24 100%);
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .screen {
+    position: absolute; inset: 0;
+    display: none; flex-direction: column;
+    animation: fade .35s ease;
+  }
+  .screen.active { display: flex; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px);} to {opacity:1; transform:none;} }
+
+  /* 顶栏 */
+  .topbar {
+    height: 56px; flex: 0 0 56px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 16px;
+    background: rgba(0,0,0,.18);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .topbar .back { font-size: 22px; cursor: pointer; width: 28px; }
+  .topbar .title { font-size: 16px; font-weight: 700; flex: 1; }
+  .stars { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+  .body { flex: 1; overflow-y: auto; padding: 18px 18px 88px; }
+  .body::-webkit-scrollbar { width: 0; }
+
+  /* 底部主按钮区 */
+  .footer {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 12px 18px 18px;
+    display: flex; gap: 12px;
+    background: linear-gradient(transparent, #060b24 40%);
+  }
+  .btn {
+    flex: 1; border: none; cursor: pointer;
+    padding: 14px; border-radius: 16px;
+    font-size: 16px; font-weight: 700; color: #06122e;
+    background: var(--accent);
+    box-shadow: 0 8px 20px rgba(255,207,74,.35);
+    transition: transform .12s;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn.ghost {
+    background: var(--card); color: #fff; border: 1px solid var(--card-b);
+    box-shadow: none;
+  }
+  .btn:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
+
+  /* ---------- 开场身份卡 ---------- */
+  #start { align-items: center; justify-content: center; text-align: center; padding: 30px; }
+  .logo { font-size: 64px; margin-bottom: 6px; filter: drop-shadow(0 6px 14px rgba(74,217,255,.5)); }
+  #start h1 { font-size: 30px; letter-spacing: 2px; }
+  #start .sub { color: #aeb8df; margin: 10px 0 26px; font-size: 14px; line-height: 1.6; }
+  .idcard {
+    width: 100%; background: linear-gradient(135deg, #2a3f8a, #14235c);
+    border: 1px solid rgba(255,255,255,.18); border-radius: 20px;
+    padding: 20px; text-align: left; margin-bottom: 22px;
+    box-shadow: 0 14px 30px rgba(0,0,0,.4);
+  }
+  .idcard .row { display: flex; align-items: center; gap: 12px; }
+  .idcard .ava { font-size: 44px; }
+  .idcard .meta small { color: #9fb0e6; }
+  .idcard .meta b { display: block; font-size: 18px; margin-top: 2px; }
+  .idcard input {
+    margin-top: 14px; width: 100%; padding: 12px 14px;
+    border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
+    background: rgba(0,0,0,.25); color: #fff; font-size: 16px; outline: none;
+  }
+  .idcard input::placeholder { color: #8a96c0; }
+
+  /* ---------- 地图 ---------- */
+  .map-intro { color: #aeb8df; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+  .zone {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--card); border: 1px solid var(--card-b);
+    border-radius: 18px; padding: 14px; margin-bottom: 12px;
+    cursor: pointer; transition: transform .12s, border-color .2s;
+  }
+  .zone:active { transform: scale(.98); }
+  .zone.done { border-color: var(--green); }
+  .zone .emoji { font-size: 34px; width: 46px; text-align: center; }
+  .zone .info { flex: 1; }
+  .zone .info b { font-size: 16px; }
+  .zone .info .prog { font-size: 12px; color: #9fb0e6; margin-top: 4px; }
+  .zone .bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,.12); margin-top: 6px; overflow: hidden; }
+  .zone .bar > i { display: block; height: 100%; background: var(--green); width: 0; transition: width .5s; }
+  .zone .status { font-size: 22px; width: 26px; text-align: center; }
+
+  /* ---------- 任务列表 ---------- */
+  .task {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--card-b);
+    border-radius: 16px; padding: 14px; margin-bottom: 11px; cursor: pointer;
+    transition: transform .12s;
+  }
+  .task:active { transform: scale(.98); }
+  .task.done { opacity: .7; border-color: var(--green); }
+  .task .tno {
+    width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px;
+    background: var(--accent2); color: #06122e; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .task.done .tno { background: var(--green); }
+  .task .tinfo { flex: 1; }
+  .task .tinfo b { font-size: 15px; }
+  .task .tinfo p { font-size: 12px; color: #9fb0e6; margin-top: 3px; }
+  .task .chev { font-size: 18px; color: #9fb0e6; }
+
+  /* ---------- 任务详情 ---------- */
+  .device-pic {
+    height: 150px; border-radius: 18px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: center; font-size: 70px;
+    background: radial-gradient(circle at 50% 30%, #2a3f8a, #101c46);
+    border: 1px solid var(--card-b);
+  }
+  .instr {
+    background: var(--card); border: 1px solid var(--card-b);
+    border-radius: 16px; padding: 16px; margin-bottom: 14px;
+  }
+  .instr .lbl { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+  .instr h2 { font-size: 18px; margin: 8px 0; line-height: 1.4; }
+  .instr .hint { font-size: 13px; color: #9fb0e6; display: flex; gap: 6px; }
+  .know {
+    background: rgba(74,217,255,.1); border: 1px dashed rgba(74,217,255,.5);
+    border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #cfeefe; line-height: 1.5;
+  }
+  .know b { color: var(--accent2); }
+
+  /* 互动：答题 */
+  .quiz-opt {
+    display: block; width: 100%; text-align: left;
+    background: var(--card); border: 1px solid var(--card-b); color: #fff;
+    border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;
+    font-size: 15px; transition: .15s;
+  }
+  .quiz-opt:active { transform: scale(.98); }
+  .quiz-opt.right { background: rgba(70,224,138,.25); border-color: var(--green); }
+  .quiz-opt.wrong { background: rgba(255,90,90,.22); border-color: #ff6a6a; }
+  .num-input {
+    width: 100%; padding: 14px; font-size: 18px; text-align: center;
+    border-radius: 14px; border: 1px solid var(--card-b);
+    background: rgba(0,0,0,.25); color: #fff; outline: none; margin-bottom: 12px;
+  }
+
+  /* 拍照 modal */
+  .modal {
+    position: absolute; inset: 0; background: rgba(3,6,20,.82);
+    display: none; align-items: center; justify-content: center; z-index: 30;
+    backdrop-filter: blur(3px);
+  }
+  .modal.active { display: flex; animation: fade .25s; }
+  .cam {
+    width: 86%; border-radius: 22px; overflow: hidden;
+    background: #0c1740; border: 1px solid var(--card-b); padding: 16px; text-align: center;
+  }
+  .viewfinder {
+    height: 230px; border-radius: 16px; overflow: hidden; position: relative;
+    background: #04102b; display: flex; align-items: center; justify-content: center;
+    border: 2px dashed rgba(255,255,255,.25); margin-bottom: 14px;
+  }
+  .viewfinder video, .viewfinder canvas { width: 100%; height: 100%; object-fit: cover; }
+  .viewfinder .ph { font-size: 80px; }
+  .viewfinder .scan {
+    position: absolute; left: 0; right: 0; height: 3px; background: var(--accent2);
+    box-shadow: 0 0 12px var(--accent2); animation: scan 2.2s linear infinite;
+  }
+  @keyframes scan { 0%{top:6%} 50%{top:92%} 100%{top:6%} }
+  .cam h3 { margin-bottom: 6px; }
+  .cam p { font-size: 13px; color: #9fb0e6; margin-bottom: 14px; }
+
+  /* ---------- 广场 ---------- */
+  .plaza-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pcard {
+    background: var(--card); border: 1px solid var(--card-b);
+    border-radius: 16px; overflow: hidden;
+  }
+  .pcard .img {
+    height: 92px; display: flex; align-items: center; justify-content: center; font-size: 44px;
+    background: radial-gradient(circle at 50% 30%, #2a3f8a, #101c46);
+  }
+  .pcard .img img { width: 100%; height: 100%; object-fit: cover; }
+  .pcard .pmeta { padding: 8px 10px; }
+  .pcard .pmeta .who { font-size: 12px; font-weight: 700; }
+  .pcard .pmeta .tag { font-size: 11px; color: #9fb0e6; margin: 2px 0 6px; }
+  .pcard .like { font-size: 12px; color: var(--accent); cursor: pointer; user-select: none; }
+  .plaza-best {
+    background: linear-gradient(135deg, #3a2f0a, #2a2204);
+    border: 1px solid rgba(255,207,74,.5); border-radius: 14px;
+    padding: 10px 14px; font-size: 13px; margin-bottom: 14px; color: var(--accent);
+  }
+
+  /* ---------- 颁奖 ---------- */
+  #award { align-items: center; justify-content: center; text-align: center; padding: 30px; }
+  .medal { font-size: 92px; animation: pop .6s cubic-bezier(.2,1.4,.5,1); filter: drop-shadow(0 0 24px var(--accent)); }
+  @keyframes pop { 0%{transform: scale(0) rotate(-30deg);} 100%{transform:none;} }
+  #award h1 { font-size: 26px; margin: 12px 0 4px; color: var(--accent); }
+  .cert {
+    width: 100%; margin: 18px 0; padding: 18px;
+    border-radius: 18px; border: 2px solid var(--accent);
+    background: linear-gradient(160deg, rgba(255,207,74,.12), rgba(74,217,255,.06));
+  }
+  .cert .ttl { letter-spacing: 4px; font-weight: 800; font-size: 18px; }
+  .cert .nm { font-size: 22px; margin: 10px 0; }
+  .cert .stat { font-size: 13px; color: #cfd8ff; line-height: 1.8; }
+  .cert .no { margin-top: 10px; font-size: 12px; color: #9fb0e6; }
+  .cert .quote { margin-top: 12px; font-size: 13px; font-style: italic; color: var(--accent2); }
+
+  /* 徽章墙 */
+  .badge-wall { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 6px; }
+  .badge-wall span {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    background: rgba(255,255,255,.08); filter: grayscale(1) opacity(.4);
+  }
+  .badge-wall span.on { filter: none; background: rgba(255,207,74,.25); box-shadow: 0 0 10px rgba(255,207,74,.5); }
+
+  /* toast */
+  #toast {
+    position: absolute; left: 50%; top: 70px; transform: translateX(-50%);
+    background: rgba(0,0,0,.85); padding: 10px 18px; border-radius: 20px;
+    font-size: 14px; z-index: 40; opacity: 0; transition: opacity .3s, top .3s; pointer-events: none;
+    border: 1px solid var(--card-b); white-space: nowrap;
+  }
+  #toast.show { opacity: 1; top: 84px; }
+
+  /* 撒花 */
+  .confetti { position: absolute; top: -10px; font-size: 18px; z-index: 35; pointer-events: none; animation: fall 2.4s linear forwards; }
+  @keyframes fall { to { transform: translateY(680px) rotate(420deg); opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="device">
+
+  <!-- 开场 -->
+  <section id="start" class="screen active">
+    <div class="logo">🔬</div>
+    <h1>小小科技员</h1>
+    <div class="sub">欢迎来到科技馆！<br>领取你的探索者身份卡，<br>完成 5 大展区的科学任务，<br>成为光荣的「小小科技员」。</div>
+    <div class="idcard">
+      <div class="row">
+        <div class="ava">🧑‍🚀</div>
+        <div class="meta">
+          <small>探索者身份卡</small>
+          <b id="cardName">未命名探索者</b>
+          <small>编号 No.1024 · 2026</small>
+        </div>
+      </div>
+      <input id="nameInput" maxlength="8" placeholder="输入你的名字，开始探索 ✏️" />
+    </div>
+    <button class="btn" style="width:100%" onclick="startGame()">🚀 开始探索</button>
+  </section>
+
+  <!-- 地图 -->
+  <section id="map" class="screen">
+    <div class="topbar">
+      <div class="title">🗺 探索地图</div>
+      <div class="stars" id="mapStars">⭐ 0/20</div>
+    </div>
+    <div class="body">
+      <div class="map-intro">点击展区进入，完成里面的科学任务。集齐一个展区的全部任务即可点亮印章 ✨</div>
+      <div id="zoneList"></div>
+    </div>
+    <div class="footer">
+      <button class="btn ghost" onclick="go('plaza')">🏛 探索广场</button>
+      <button class="btn" id="awardBtn" onclick="tryAward()">🎖 领取称号</button>
+    </div>
+  </section>
+
+  <!-- 任务列表 -->
+  <section id="zone" class="screen">
+    <div class="topbar">
+      <div class="back" onclick="go('map')">‹</div>
+      <div class="title" id="zoneTitle">展区</div>
+      <div class="stars" id="zoneStars"></div>
+    </div>
+    <div class="body" id="taskList"></div>
+  </section>
+
+  <!-- 任务详情 -->
+  <section id="task" class="screen">
+    <div class="topbar">
+      <div class="back" onclick="go('zone')">‹</div>
+      <div class="title" id="taskTitle">任务</div>
+    </div>
+    <div class="body" id="taskBody"></div>
+  </section>
+
+  <!-- 广场 -->
+  <section id="plaza" class="screen">
+    <div class="topbar">
+      <div class="back" onclick="go('map')">‹</div>
+      <div class="title">🏛 探索广场</div>
+    </div>
+    <div class="body">
+      <div class="plaza-best">🏆 今日最佳探索照 · 一起为小伙伴点赞吧！</div>
+      <div class="plaza-grid" id="plazaGrid"></div>
+    </div>
+  </section>
+
+  <!-- 颁奖 -->
+  <section id="award" class="screen">
+    <div class="medal">🎖</div>
+    <h1>恭喜你！</h1>
+    <div class="badge-wall" id="badgeWall"></div>
+    <div class="cert">
+      <div class="ttl">小 小 科 技 员</div>
+      <div class="nm" id="certName">探索者</div>
+      <div class="stat" id="certStat"></div>
+      <div class="no">证书编号 No.1024 · 颁发日期 2026-06-08</div>
+      <div class="quote">"今天你用好奇心点亮了科学，<br>明天去探索更大的世界！"</div>
+    </div>
+    <button class="btn" style="width:100%" onclick="restart()">🔄 再玩一次</button>
+  </section>
+
+  <!-- 拍照 modal -->
+  <div class="modal" id="camModal">
+    <div class="cam">
+      <h3 id="camTitle">📷 拍照打卡</h3>
+      <p id="camTip">对准装置，按下快门记录精彩瞬间！</p>
+      <div class="viewfinder" id="viewfinder">
+        <div class="scan"></div>
+        <div class="ph" id="camPh">📸</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn ghost" onclick="closeCam()">取消</button>
+        <button class="btn" id="shutterBtn" onclick="shoot()">📸 拍照</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script>
+/* ============ 数据 ============ */
+const ZONES = [
+  { id:'mech', emoji:'⚙️', name:'力学馆', tasks:[
+    { icon:'🌀', name:'伯努利悬浮球', instr:'打开吹风口，把小球放上去——小球稳稳浮在气流里时，拍下它！', hint:'一楼中央旋转展台', know:'高速气流压强更低，<b>伯努利原理</b>把小球"兜"在气柱中。', type:'photo' },
+    { icon:'🎢', name:'最速降线', instr:'同时放下两个小球，数一数：哪条轨道的球先到底？', hint:'靠墙的双轨滑道', know:'弯曲的<b>最速降线</b>反而比直线更快到达终点！', type:'quiz',
+      q:'哪条轨道的小球先到达终点？', opts:['笔直的轨道','弯曲下凹的轨道','一样快'], ans:1 },
+    { icon:'🧲', name:'平衡的奥秘', instr:'移动配重块，让横杆水平静止，记下你用了几块配重。', hint:'力学馆出口处', know:'力矩相等时杠杆才<b>平衡</b>：重×臂长 = 重×臂长。', type:'input', label:'你用了几块配重？', ans:'3' },
+  ]},
+  { id:'elec', emoji:'⚡', name:'电与磁', tasks:[
+    { icon:'🌍', name:'磁悬浮地球仪', instr:'转动旋钮，让地球浮在半空——浮起来的瞬间按下拍照！', hint:'二楼蓝色展台', know:'同名磁极<b>相互排斥</b>，让地球仪克服重力悬浮。', type:'photo' },
+    { icon:'🔦', name:'手摇发电机', instr:'用力摇 10 秒，看看能点亮几盏灯？把数字填进手册。', hint:'互动操作台', know:'摇动让线圈切割磁感线，<b>机械能变电能</b>。', type:'input', label:'你点亮了几盏灯？', ans:'5' },
+    { icon:'⚡', name:'辉光静电球', instr:'把手轻贴静电球，拍下你头发竖起来的搞怪样子！', hint:'记得先取下金属饰品', know:'同种<b>静电</b>互相排斥，所以每根头发都翘起来啦。', type:'photo' },
+    { icon:'🔋', name:'电学小考', instr:'操作完装置，来挑战一道小题吧。', hint:'', know:'电流的单位是<b>安培(A)</b>，电压的单位是伏特(V)。', type:'quiz',
+      q:'电流的单位是？', opts:['伏特 V','安培 A','瓦特 W'], ans:1 },
+  ]},
+  { id:'sound', emoji:'🔊', name:'声光世界', tasks:[
+    { icon:'🎹', name:'激光竖琴', instr:'用手挡住一束束激光，弹奏一段旋律，拍下演奏瞬间！', hint:'暗房入口', know:'手挡住光束触发<b>光电传感器</b>，发出对应音符。', type:'photo' },
+    { icon:'🪞', name:'无限镜廊', instr:'走进镜廊，数一数你能看到几个自己（≥10个就算对）。', hint:'两面平行镜子之间', know:'两面镜子<b>反复反射</b>，形成望不到头的影像。', type:'input', label:'你大约看到几个自己？', ans:'12' },
+    { icon:'🌈', name:'三棱镜彩虹', instr:'让白光穿过棱镜，看到彩虹时拍下来！', hint:'靠窗的光学台', know:'白光被<b>色散</b>成七种颜色，这就是彩虹的成因。', type:'quiz',
+      q:'彩虹其实是白光被分成了几种主要颜色？', opts:['3 种','5 种','7 种'], ans:2 },
+  ]},
+  { id:'life', emoji:'🌱', name:'生命科学', tasks:[
+    { icon:'🫀', name:'巨型心脏', instr:'走进会跳动的大心脏，跟着它的节奏拍张照！', hint:'生命馆中庭', know:'心脏每天约跳<b>10 万次</b>，把血液送往全身。', type:'photo' },
+    { icon:'🦴', name:'人体骨骼拼图', instr:'把骨骼模型拼完整，数数人体一共有多少块骨头。', hint:'拼图互动墙', know:'成年人有<b>206 块</b>骨头，支撑并保护着身体。', type:'input', label:'成年人有多少块骨头？', ans:'206' },
+    { icon:'🧬', name:'DNA 螺旋', instr:'旋转 DNA 模型，挑战一道遗传小题。', hint:'', know:'DNA 是<b>双螺旋</b>结构，携带生命的遗传密码。', type:'quiz',
+      q:'DNA 的经典结构是？', opts:['单链','双螺旋','三角形'], ans:1 },
+  ]},
+  { id:'space', emoji:'🚀', name:'太空舱', tasks:[
+    { icon:'🌑', name:'月球称重', instr:'站上月球秤，看看你在月球有多重，拍下读数！', hint:'太空馆入口', know:'月球引力约为地球的<b>1/6</b>，所以你在月球更轻。', type:'photo' },
+    { icon:'🛰️', name:'卫星对接', instr:'操纵摇杆完成飞船对接，成功后记下用了几次尝试。', hint:'模拟驾驶舱', know:'真实对接要精确控制<b>速度与角度</b>，差一点都不行。', type:'input', label:'你第几次成功对接？', ans:'2' },
+    { icon:'🪐', name:'行星排排站', instr:'按离太阳由近到远排列行星，挑战最后一题！', hint:'', know:'离太阳最近的是<b>水星</b>，地球排第三。', type:'quiz',
+      q:'离太阳最近的行星是？', opts:['地球','金星','水星'], ans:2 },
+  ]},
+];
+
+const FRIENDS = [
+  { who:'小宇', tag:'磁悬浮地球仪', icon:'🌍', likes:24 },
+  { who:'朵朵', tag:'辉光静电球', icon:'⚡', likes:18 },
+  { who:'乐乐', tag:'激光竖琴', icon:'🎹', likes:15 },
+  { who:'天天', tag:'伯努利悬浮球', icon:'🌀', likes:9 },
+];
+
+/* ============ 状态 ============ */
+let player = { name:'探索者', done:{}, photos:[] };
+let curZone = null, curTask = null, stream = null;
+const totalTasks = ZONES.reduce((s,z)=>s+z.tasks.length,0);
+
+/* ============ 工具 ============ */
+const $ = id => document.getElementById(id);
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(id).classList.add('active');
+  if(id==='map') renderMap();
+  if(id==='zone') renderZone();
+  if(id==='plaza') renderPlaza();
+}
+function toast(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800);
+}
+const taskKey = (z,i)=> z+'-'+i;
+const isDone = (z,i)=> !!player.done[taskKey(z,i)];
+const doneCount = ()=> Object.keys(player.done).length;
+function zoneDoneCount(z){ return z.tasks.filter((_,i)=>isDone(z.id,i)).length; }
+function zoneCleared(z){ return zoneDoneCount(z)===z.tasks.length; }
+function allCleared(){ return ZONES.every(zoneCleared); }
+
+/* ============ 开场 ============ */
+$('nameInput').addEventListener('input', e=>{
+  $('cardName').textContent = e.target.value.trim() || '未命名探索者';
+});
+function startGame(){
+  const n = $('nameInput').value.trim();
+  player.name = n || '小探索家';
+  toast('身份卡已激活，出发！🚀');
+  go('map');
+}
+
+/* ============ 地图 ============ */
+function renderMap(){
+  $('mapStars').textContent = `⭐ ${doneCount()}/${totalTasks}`;
+  const wrap = $('zoneList'); wrap.innerHTML='';
+  ZONES.forEach(z=>{
+    const dc = zoneDoneCount(z), pct = Math.round(dc/z.tasks.length*100);
+    const cleared = zoneCleared(z);
+    const el = document.createElement('div');
+    el.className = 'zone'+(cleared?' done':'');
+    el.onclick = ()=>{ curZone=z; go('zone'); };
+    el.innerHTML = `
+      <div class="emoji">${z.emoji}</div>
+      <div class="info">
+        <b>${z.name}</b>
+        <div class="prog">${dc}/${z.tasks.length} 个任务 ${cleared?'· 印章已点亮 ✨':''}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>
+      <div class="status">${cleared?'🏅':'›'}</div>`;
+    wrap.appendChild(el);
+  });
+  const btn = $('awardBtn');
+  btn.disabled = !allCleared();
+  btn.textContent = allCleared() ? '🎖 领取称号' : `🎖 还差 ${totalTasks-doneCount()} 个`;
+}
+
+/* ============ 任务列表 ============ */
+function renderZone(){
+  $('zoneTitle').textContent = curZone.emoji+' '+curZone.name;
+  $('zoneStars').textContent = `${zoneDoneCount(curZone)}/${curZone.tasks.length}`;
+  const wrap = $('taskList'); wrap.innerHTML='';
+  curZone.tasks.forEach((t,i)=>{
+    const done = isDone(curZone.id,i);
+    const el = document.createElement('div');
+    el.className='task'+(done?' done':'');
+    el.onclick=()=>openTask(i);
+    el.innerHTML=`
+      <div class="tno">${done?'✓':i+1}</div>
+      <div class="tinfo"><b>${t.icon} ${t.name}</b><p>${done?'已完成 · 点击回看':t.instr.slice(0,18)+'…'}</p></div>
+      <div class="chev">›</div>`;
+    wrap.appendChild(el);
+  });
+}
+
+/* ============ 任务详情 ============ */
+function openTask(i){
+  curTask = i;
+  const t = curZone.tasks[i];
+  const done = isDone(curZone.id,i);
+  $('taskTitle').textContent = `任务 ${i+1} · ${t.name}`;
+  const b = $('taskBody');
+  let action='';
+  if(done){
+    action = `<button class="btn" style="width:100%" disabled>✓ 任务已完成</button>`;
+  } else if(t.type==='photo'){
+    action = `<button class="btn" style="width:100%" onclick="openCam()">📷 拍照打卡</button>`;
+  } else if(t.type==='quiz'){
+    action = `<h2 style="font-size:16px;margin:6px 0 12px">${t.q}</h2>`+
+      t.opts.map((o,k)=>`<button class="quiz-opt" onclick="answerQuiz(${k},this)">${String.fromCharCode(65+k)}. ${o}</button>`).join('');
+  } else if(t.type==='input'){
+    action = `<div style="font-size:15px;margin-bottom:10px">${t.label}</div>
+      <input class="num-input" id="numAns" placeholder="输入你的答案" />
+      <button class="btn" style="width:100%" onclick="checkInput()">提交答案</button>`;
+  }
+  b.innerHTML = `
+    <div class="device-pic">${t.icon}</div>
+    <div class="instr">
+      <div class="lbl">📍 探索任务</div>
+      <h2>${t.instr}</h2>
+      ${t.hint?`<div class="hint">💡 提示：${t.hint}</div>`:''}
+    </div>
+    <div class="know">🔎 科学小知识：${t.know}</div>
+    <div style="margin-top:16px">${action}</div>`;
+  go('task');
+}
+
+function answerQuiz(k, el){
+  const t = curZone.tasks[curTask];
+  if(k===t.ans){
+    el.classList.add('right');
+    document.querySelectorAll('.quiz-opt').forEach(o=>o.onclick=null);
+    setTimeout(()=>completeTask(),550);
+  } else {
+    el.classList.add('wrong'); toast('再想想，操作一下装置看看？🤔');
+    setTimeout(()=>el.classList.remove('wrong'),700);
+  }
+}
+function checkInput(){
+  const t = curZone.tasks[curTask];
+  const v = ($('numAns').value||'').trim();
+  if(v===t.ans){ completeTask(); }
+  else { toast('答案不对哦，去装置上再试一次！'); }
+}
+
+/* ============ 拍照 ============ */
+function openCam(){
+  const t = curZone.tasks[curTask];
+  $('camTitle').textContent = '📷 '+t.name;
+  $('camTip').textContent = t.instr;
+  $('camPh').style.display='block';
+  $('camModal').classList.add('active');
+  // 尝试调用真实摄像头，失败则用占位图
+  navigator.mediaDevices?.getUserMedia({video:{facingMode:'environment'}})
+    .then(s=>{
+      stream=s;
+      const v=document.createElement('video');
+      v.autoplay=true; v.playsInline=true; v.srcObject=s;
+      const vf=$('viewfinder'); vf.querySelector('.ph').style.display='none';
+      v.id='liveVid'; vf.appendChild(v);
+    }).catch(()=>{ /* 没有摄像头，保留占位 emoji */ });
+}
+function closeCam(){
+  $('camModal').classList.remove('active');
+  const v=$('liveVid'); if(v) v.remove();
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+}
+function shoot(){
+  const t = curZone.tasks[curTask];
+  let dataUrl = null;
+  const v = $('liveVid');
+  if(v){
+    const c=document.createElement('canvas'); c.width=320; c.height=240;
+    c.getContext('2d').drawImage(v,0,0,320,240);
+    dataUrl = c.toDataURL('image/jpeg',0.7);
+  }
+  player.photos.push({ who:player.name, tag:t.name, icon:t.icon, img:dataUrl, likes:0, mine:true });
+  toast('📸 咔嚓！已上传到探索广场');
+  closeCam();
+  completeTask();
+}
+
+/* ============ 完成任务 ============ */
+function completeTask(){
+  const wasCleared = zoneCleared(curZone);
+  player.done[taskKey(curZone.id,curTask)] = true;
+  burst('⭐');
+  const t = curZone.tasks[curTask];
+  setTimeout(()=>{
+    if(zoneCleared(curZone) && !wasCleared){
+      toast(`🏅 ${curZone.name} 印章点亮！`);
+      burst('🎉');
+    } else {
+      toast('✅ 徽章 +1，做得好！');
+    }
+    if(allCleared()){ setTimeout(()=>go('map'),700); }
+    else { openTask(curTask); } // 刷新为已完成态
+  }, 400);
+}
+
+/* ============ 广场 ============ */
+function renderPlaza(){
+  const grid = $('plazaGrid'); grid.innerHTML='';
+  const list = [...player.photos.map(p=>({...p})), ...FRIENDS];
+  if(player.photos.length===0){
+    grid.innerHTML = `<div style="grid-column:1/3;color:#9fb0e6;font-size:13px;text-align:center;padding:10px 0">还没有你的打卡照～去任务里拍一张上传吧！👇</div>`;
+  }
+  list.forEach((p,idx)=>{
+    const el=document.createElement('div'); el.className='pcard';
+    const imgHtml = p.img ? `<img src="${p.img}"/>` : p.icon;
+    el.innerHTML=`
+      <div class="img">${imgHtml}</div>
+      <div class="pmeta">
+        <div class="who">${p.mine?'🧑‍🚀 '+p.who+'（我）':'👦 '+p.who}</div>
+        <div class="tag">${p.tag}</div>
+        <div class="like" data-i="${idx}">❤️ <span>${p.likes}</span></div>
+      </div>`;
+    el.querySelector('.like').onclick=function(){
+      const s=this.querySelector('span'); s.textContent=+s.textContent+1; this.style.color='#ff6a6a';
+    };
+    grid.appendChild(el);
+  });
+}
+
+/* ============ 颁奖 ============ */
+function tryAward(){ if(allCleared()) showAward(); else toast('先完成全部 20 个任务哦！'); }
+function showAward(){
+  $('certName').textContent = `${player.name}  同学`;
+  $('certStat').innerHTML = `探索了 <b>${ZONES.length}</b> 大展区<br>完成 <b>${totalTasks}</b> 个科学任务<br>点亮 <b>${totalTasks}</b> 枚徽章`;
+  const wall=$('badgeWall'); wall.innerHTML='';
+  ZONES.forEach(z=>{ const s=document.createElement('span'); s.className='on'; s.textContent=z.emoji; wall.appendChild(s); });
+  go('award');
+  for(let i=0;i<5;i++) setTimeout(()=>burst('🎉'),i*250);
+}
+
+/* ============ 撒花 ============ */
+function burst(emoji){
+  const dev=$('device');
+  for(let i=0;i<10;i++){
+    const c=document.createElement('div'); c.className='confetti'; c.textContent=emoji;
+    c.style.left=Math.random()*440+'px';
+    c.style.animationDelay=Math.random()*0.4+'s';
+    c.style.fontSize=(14+Math.random()*16)+'px';
+    dev.appendChild(c);
+    setTimeout(()=>c.remove(),2600);
+  }
+}
+
+/* ============ 重开 ============ */
+function restart(){
+  player={ name:'探索者', done:{}, photos:[] };
+  $('nameInput').value=''; $('cardName').textContent='未命名探索者';
+  go('start');
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('start').classList.add('active');
+}
+</script>
+</body>
+</html>
